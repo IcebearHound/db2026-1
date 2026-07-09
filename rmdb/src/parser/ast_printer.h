@@ -32,6 +32,14 @@ private:
         std::cout << offset2string(offset) << val << '\n';
     }
 
+    static void print_val(const TableRef &val, int offset) {
+        std::cout << offset2string(offset) << val.tab_name;
+        if (!val.alias.empty()) {
+            std::cout << " AS " << val.alias;
+        }
+        std::cout << '\n';
+    }
+
     template<typename T>
     static void print_val_list(const std::vector<T> &vals, int offset) {
         std::cout << offset2string(offset) << "LIST\n";

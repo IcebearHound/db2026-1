@@ -30,6 +30,9 @@ class Query{
     std::vector<TabCol> cols;
     // 表名
     std::vector<std::string> tables;
+    std::vector<std::string> aliases;
+    bool select_all = false;
+    bool explain_analyze = false;
     // update 的set 值
     std::vector<SetClause> set_clauses;
     //insert 的values值
@@ -51,7 +54,8 @@ public:
 
 private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target);
-    void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
+    void get_all_cols(const std::vector<std::string> &tab_names, const std::vector<std::string> &aliases,
+                      std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);

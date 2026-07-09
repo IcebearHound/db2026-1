@@ -42,7 +42,8 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Filter
 } PlanTag;
 
 // 查询执行计划
@@ -56,13 +57,18 @@ public:
 class ScanPlan : public Plan
 {
     public:
-        ScanPlan(PlanTag tag, SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names)
+        ScanPlan(PlanTag tag, SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds,
+                 std::vector<std::string> index_col_names, std::string alias_name = "")
         {
             Plan::tag = tag;
             tab_name_ = std::move(tab_name);
+            alias_name_ = alias_name.empty() ? tab_name_ : std::move(alias_name);
             conds_ = std::move(conds);
             TabMeta &tab = sm_manager->db_.get_table(tab_name_);
             cols_ = tab.cols;
+            for (auto &col : cols_) {
+                col.tab_name = alias_name_;
+            }
             len_ = cols_.back().offset + cols_.back().len;
             fed_conds_ = conds_;
             index_col_names_ = index_col_names;
@@ -70,13 +76,28 @@ class ScanPlan : public Plan
         }
         ~ScanPlan(){}
         // 以下变量同ScanExecutor中的变量
-        std::string tab_name_;                     
-        std::vector<ColMeta> cols_;                
+        std::string tab_name_;
+        std::string alias_name_;
+        std::vector<ColMeta> cols_;
         std::vector<Condition> conds_;             
         size_t len_;                               
         std::vector<Condition> fed_conds_;
         std::vector<std::string> index_col_names_;
     
+};
+
+class FilterPlan : public Plan
+{
+    public:
+        FilterPlan(std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
+        {
+            Plan::tag = T_Filter;
+            subplan_ = std::move(subplan);
+            conds_ = std::move(conds);
+        }
+        ~FilterPlan(){}
+        std::shared_ptr<Plan> subplan_;
+        std::vector<Condition> conds_;
 };
 
 class JoinPlan : public Plan
@@ -104,16 +125,18 @@ class JoinPlan : public Plan
 class ProjectionPlan : public Plan
 {
     public:
-        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols)
+        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols, bool output_star = false)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
             sel_cols_ = std::move(sel_cols);
+            output_star_ = output_star;
         }
         ~ProjectionPlan(){}
         std::shared_ptr<Plan> subplan_;
         std::vector<TabCol> sel_cols_;
-        
+        bool output_star_ = false;
+
 };
 
 class SortPlan : public Plan
@@ -154,6 +177,7 @@ class DMLPlan : public Plan
         std::vector<Value> values_;
         std::vector<Condition> conds_;
         std::vector<SetClause> set_clauses_;
+        bool explain_analyze_ = false;
 };
 
 // ddl语句, 包括create/drop table; create/drop index;

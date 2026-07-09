@@ -22,7 +22,7 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN ON AS EXPLAIN ANALYZE EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -42,7 +42,10 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_val> value
 %type <sv_vals> valueList
 %type <sv_str> tbName colName
-%type <sv_strs> tableList colNameList
+%type <sv_strs> colNameList
+%type <sv_table_ref> tableRef
+%type <sv_table_list> tableList
+%type <sv_str> optAlias
 %type <sv_col> col
 %type <sv_cols> colList selector
 %type <sv_set_clause> setClause
@@ -156,7 +159,15 @@ dml:
     }
     |   SELECT selector FROM tableList optWhereClause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        auto conds = $4.conds;
+        conds.insert(conds.end(), $5.begin(), $5.end());
+        $$ = std::make_shared<SelectStmt>($2, $4.tabs, conds, $6);
+    }
+    |   EXPLAIN ANALYZE SELECT selector FROM tableList optWhereClause opt_order_clause
+    {
+        auto conds = $6.conds;
+        conds.insert(conds.end(), $7.begin(), $7.end());
+        $$ = std::make_shared<SelectStmt>($4, $6.tabs, conds, $8, true);
     }
     ;
 
@@ -242,7 +253,7 @@ condition:
     ;
 
 optWhereClause:
-        /* epsilon */ { /* ignore*/ }
+        /* epsilon */ { $$ = {}; }
     |   WHERE whereClause
     {
         $$ = $2;
@@ -347,26 +358,53 @@ selector:
     ;
 
 tableList:
-        tbName
+        tableRef
     {
-        $$ = std::vector<std::string>{$1};
+        $$.tabs = std::vector<TableRef>{$1};
+        $$.conds = {};
     }
-    |   tableList ',' tbName
+    |   tableList ',' tableRef
     {
-        $$.push_back($3);
+        $$ = $1;
+        $$.tabs.push_back($3);
     }
-    |   tableList JOIN tbName
+    |   tableList JOIN tableRef
     {
-        $$.push_back($3);
+        $$ = $1;
+        $$.tabs.push_back($3);
+    }
+    |   tableList JOIN tableRef ON whereClause
+    {
+        $$ = $1;
+        $$.tabs.push_back($3);
+        $$.conds.insert($$.conds.end(), $5.begin(), $5.end());
     }
     ;
 
-opt_order_clause:
-    ORDER BY order_clause      
-    { 
-        $$ = $3; 
+tableRef:
+        tbName optAlias
+    {
+        $$ = TableRef{$1, $2};
     }
-    |   /* epsilon */ { /* ignore*/ }
+    ;
+
+optAlias:
+        /* epsilon */ { $$ = ""; }
+    |   tbName
+    {
+        $$ = $1;
+    }
+    |   AS tbName
+    {
+        $$ = $2;
+    }
+    ;
+opt_order_clause:
+    ORDER BY order_clause
+    {
+        $$ = $3;
+    }
+    |   /* epsilon */ { $$ = nullptr; }
     ;
 
 order_clause:

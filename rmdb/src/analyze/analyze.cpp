@@ -10,6 +10,8 @@ See the Mulan PSL v2 for more details. */
 
 #include "analyze.h"
 
+#include <algorithm>
+
 /**
  * @description: 分析器，进行语义分析和查询重写，需要检查不符合语义规定的部分
  * @param {shared_ptr<ast::TreeNode>} parse parser生成的结果集
@@ -21,7 +23,12 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))
     {
         // 处理表名
-        query->tables = std::move(x->tabs);
+        query->explain_analyze = x->explain_analyze;
+        query->select_all = x->cols.empty();
+        for (auto &tab : x->tabs) {
+            query->tables.push_back(tab.tab_name);
+            query->aliases.push_back(tab.alias.empty() ? tab.tab_name : tab.alias);
+        }
         /** TODO: 检查表是否存在 */
 
         // 处理target list，再target list中添加上表名，例如 a.id
@@ -31,7 +38,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         }
         
         std::vector<ColMeta> all_cols;
-        get_all_cols(query->tables, all_cols);
+        get_all_cols(query->tables, query->aliases, all_cols);
         if (query->cols.empty()) {
             // select all columns
             for (auto &col : all_cols) {
@@ -46,7 +53,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         }
         //处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds);
+        check_clause(query->aliases, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         /** TODO: */
 
@@ -84,17 +91,26 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         }
         target.tab_name = tab_name;
     } else {
-        /** TODO: Make sure target column exists */
-        
+        auto pos = std::find_if(all_cols.begin(), all_cols.end(), [&](const ColMeta &col) {
+            return col.tab_name == target.tab_name && col.name == target.col_name;
+        });
+        if (pos == all_cols.end()) {
+            throw ColumnNotFoundError(target.tab_name + "." + target.col_name);
+        }
     }
     return target;
 }
 
-void Analyze::get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols) {
-    for (auto &sel_tab_name : tab_names) {
+void Analyze::get_all_cols(const std::vector<std::string> &tab_names, const std::vector<std::string> &aliases,
+                           std::vector<ColMeta> &all_cols) {
+    for (size_t i = 0; i < tab_names.size(); i++) {
+        const auto &sel_tab_name = tab_names[i];
         // 这里db_不能写成get_db(), 注意要传指针
         const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
-        all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
+        for (auto col : sel_tab_cols) {
+            col.tab_name = aliases.empty() ? sel_tab_name : aliases[i];
+            all_cols.push_back(col);
+        }
     }
 }
 
@@ -118,7 +134,7 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
 void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds) {
     // auto all_cols = get_all_cols(tab_names);
     std::vector<ColMeta> all_cols;
-    get_all_cols(tab_names, all_cols);
+    get_all_cols(tab_names, tab_names, all_cols);
     // Get raw values in where clause
     for (auto &cond : conds) {
         // Infer table name from column name
@@ -126,16 +142,29 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
         if (!cond.is_rhs_val) {
             cond.rhs_col = check_column(all_cols, cond.rhs_col);
         }
-        TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
-        auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
+        auto lhs_col = std::find_if(all_cols.begin(), all_cols.end(), [&](const ColMeta &col) {
+            return col.tab_name == cond.lhs_col.tab_name && col.name == cond.lhs_col.col_name;
+        });
+        if (lhs_col == all_cols.end()) {
+            throw ColumnNotFoundError(cond.lhs_col.tab_name + "." + cond.lhs_col.col_name);
+        }
         ColType lhs_type = lhs_col->type;
         ColType rhs_type;
         if (cond.is_rhs_val) {
+            if (lhs_type == TYPE_FLOAT && cond.rhs_val.type == TYPE_INT) {
+                cond.rhs_val.set_float(static_cast<float>(cond.rhs_val.int_val));
+            } else if (lhs_type == TYPE_INT && cond.rhs_val.type == TYPE_FLOAT) {
+                cond.rhs_val.set_int(static_cast<int>(cond.rhs_val.float_val));
+            }
             cond.rhs_val.init_raw(lhs_col->len);
             rhs_type = cond.rhs_val.type;
         } else {
-            TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-            auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+            auto rhs_col = std::find_if(all_cols.begin(), all_cols.end(), [&](const ColMeta &col) {
+                return col.tab_name == cond.rhs_col.tab_name && col.name == cond.rhs_col.col_name;
+            });
+            if (rhs_col == all_cols.end()) {
+                throw ColumnNotFoundError(cond.rhs_col.tab_name + "." + cond.rhs_col.col_name);
+            }
             rhs_type = rhs_col->type;
         }
         if (lhs_type != rhs_type) {

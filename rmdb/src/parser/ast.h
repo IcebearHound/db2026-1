@@ -214,11 +214,22 @@ struct JoinExpr : public TreeNode {
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
+struct TableRef {
+    std::string tab_name;
+    std::string alias;
+};
+
+struct TableList {
+    std::vector<TableRef> tabs;
+    std::vector<std::shared_ptr<BinaryExpr>> conds;
+};
+
 struct SelectStmt : public TreeNode {
     std::vector<std::shared_ptr<Col>> cols;
-    std::vector<std::string> tabs;
+    std::vector<TableRef> tabs;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
+    bool explain_analyze = false;
 
     
     bool has_sort;
@@ -226,11 +237,23 @@ struct SelectStmt : public TreeNode {
 
 
     SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
+               std::vector<TableRef> tabs_,
+               std::vector<std::shared_ptr<BinaryExpr>> conds_,
+               std::shared_ptr<OrderBy> order_,
+               bool explain_analyze_ = false) :
+            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
+            explain_analyze(explain_analyze_), order(std::move(order_)) {
+                has_sort = (bool)order;
+            }
+
+    SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
                std::vector<std::string> tabs_,
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
                std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
-            order(std::move(order_)) {
+            cols(std::move(cols_)), conds(std::move(conds_)), order(std::move(order_)) {
+                for (auto &tab : tabs_) {
+                    tabs.push_back(TableRef{tab, ""});
+                }
                 has_sort = (bool)order;
             }
 };
@@ -252,6 +275,8 @@ struct SemValue {
     bool sv_bool;
     OrderByDir sv_orderby_dir;
     std::vector<std::string> sv_strs;
+    TableRef sv_table_ref;
+    TableList sv_table_list;
 
     std::shared_ptr<TreeNode> sv_node;
 

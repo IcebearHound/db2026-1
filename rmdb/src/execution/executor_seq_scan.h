@@ -29,6 +29,19 @@ class SeqScanExecutor : public AbstractExecutor {
     std::unique_ptr<RecScan> scan_;     // table_iterator
 
     SmManager *sm_manager_;
+    size_t scanned_rows_ = 0;
+
+    void advance() {
+        while (scan_ != nullptr && !scan_->is_end()) {
+            rid_ = scan_->rid();
+            auto rec = fh_->get_record(rid_, context_);
+            scanned_rows_++;
+            if (eval_conds(conds_, rec.get(), cols_)) {
+                return;
+            }
+            scan_->next();
+        }
+    }
 
    public:
     SeqScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, Context *context) {
@@ -46,16 +59,36 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
-        
+        scan_ = std::make_unique<RmScan>(fh_);
+        advance();
     }
 
     void nextTuple() override {
-        
+        scan_->next();
+        advance();
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        rows_++;
+        return fh_->get_record(rid_, context_);
     }
+
+    bool is_end() const override { return scan_ == nullptr || scan_->is_end(); }
+
+    size_t tupleLen() const override { return len_; }
+
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+
+    std::string getType() override { return "SeqScanExecutor"; }
+
+    ColMeta get_col_offset(const TabCol &target) override { return *get_col(cols_, target); }
+
+    void reset_stats() override {
+        rows_ = 0;
+        scanned_rows_ = 0;
+    }
+
+    size_t scanned_rows() const override { return scanned_rows_; }
 
     Rid &rid() override { return rid_; }
 };

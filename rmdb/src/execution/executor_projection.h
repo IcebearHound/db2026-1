@@ -9,6 +9,8 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
+#include <cstring>
+
 #include "execution_defs.h"
 #include "execution_manager.h"
 #include "executor_abstract.h"
@@ -39,13 +41,38 @@ class ProjectionExecutor : public AbstractExecutor {
         len_ = curr_offset;
     }
 
-    void beginTuple() override {}
+    void beginTuple() override { prev_->beginTuple(); }
 
-    void nextTuple() override {}
+    void nextTuple() override { prev_->nextTuple(); }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        auto prev_rec = prev_->Next();
+        auto rec = std::make_unique<RmRecord>(len_);
+        const auto &prev_cols = prev_->cols();
+        for (size_t i = 0; i < sel_idxs_.size(); i++) {
+            const auto &src_col = prev_cols[sel_idxs_[i]];
+            memcpy(rec->data + cols_[i].offset, prev_rec->data + src_col.offset, src_col.len);
+        }
+        rows_++;
+        return rec;
     }
+
+    bool is_end() const override { return prev_->is_end(); }
+
+    size_t tupleLen() const override { return len_; }
+
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+
+    std::string getType() override { return "ProjectionExecutor"; }
+
+    ColMeta get_col_offset(const TabCol &target) override { return *get_col(cols_, target); }
+
+    void reset_stats() override {
+        rows_ = 0;
+        prev_->reset_stats();
+    }
+
+    std::vector<AbstractExecutor *> children() const override { return {prev_.get()}; }
 
     Rid &rid() override { return _abstract_rid; }
 };
