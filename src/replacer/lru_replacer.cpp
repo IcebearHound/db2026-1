@@ -31,7 +31,8 @@ void LRUReplacer::pin(frame_id_t frame_id) {
 
 void LRUReplacer::unpin(frame_id_t frame_id) {
     std::scoped_lock lock{latch_};
-    if (frame_id < 0 || LRUhash_.count(frame_id) != 0 || LRUlist_.size() >= max_size_) {
+    if (frame_id < 0 || static_cast<size_t>(frame_id) >= max_size_ || LRUhash_.count(frame_id) != 0 ||
+        LRUlist_.size() >= max_size_) {
         return;
     }
     LRUlist_.push_back(frame_id);

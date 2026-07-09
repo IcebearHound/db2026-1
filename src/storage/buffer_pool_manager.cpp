@@ -32,6 +32,9 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
 }
 
 Page *BufferPoolManager::fetch_page(PageId page_id) {
+    if (page_id.page_no == INVALID_PAGE_ID) {
+        return nullptr;
+    }
     std::scoped_lock lock{latch_};
     auto it = page_table_.find(page_id);
     if (it != page_table_.end()) {
@@ -56,6 +59,9 @@ Page *BufferPoolManager::fetch_page(PageId page_id) {
 }
 
 bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
+    if (page_id.page_no == INVALID_PAGE_ID) {
+        return false;
+    }
     std::scoped_lock lock{latch_};
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) {
@@ -75,6 +81,9 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
 }
 
 bool BufferPoolManager::flush_page(PageId page_id) {
+    if (page_id.page_no == INVALID_PAGE_ID) {
+        return false;
+    }
     std::scoped_lock lock{latch_};
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) {
@@ -105,6 +114,9 @@ Page *BufferPoolManager::new_page(PageId *page_id) {
 }
 
 bool BufferPoolManager::delete_page(PageId page_id) {
+    if (page_id.page_no == INVALID_PAGE_ID) {
+        return false;
+    }
     std::scoped_lock lock{latch_};
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) {
@@ -118,9 +130,6 @@ bool BufferPoolManager::delete_page(PageId page_id) {
         return false;
     }
 
-    if (page->is_dirty_) {
-        disk_manager_->write_page(page_id.fd, page_id.page_no, page->data_, PAGE_SIZE);
-    }
     page_table_.erase(it);
     replacer_->pin(frame_id);
     page->reset_memory();
