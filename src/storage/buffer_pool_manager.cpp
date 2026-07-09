@@ -107,7 +107,7 @@ Page *BufferPoolManager::new_page(PageId *page_id) {
     Page *page = &pages_[frame_id];
     update_page(page, new_page_id, frame_id);
     page->pin_count_ = 1;
-    page->is_dirty_ = true;
+    page->is_dirty_ = false;
     *page_id = new_page_id;
     replacer_->pin(frame_id);
     return page;
@@ -120,6 +120,8 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     std::scoped_lock lock{latch_};
     auto it = page_table_.find(page_id);
     if (it == page_table_.end()) {
+        char empty_page[PAGE_SIZE] = {};
+        disk_manager_->write_page(page_id.fd, page_id.page_no, empty_page, PAGE_SIZE);
         disk_manager_->deallocate_page(page_id.page_no);
         return true;
     }
@@ -133,6 +135,7 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     page_table_.erase(it);
     replacer_->pin(frame_id);
     page->reset_memory();
+    disk_manager_->write_page(page_id.fd, page_id.page_no, page->data_, PAGE_SIZE);
     page->id_ = PageId{page_id.fd, INVALID_PAGE_ID};
     page->pin_count_ = 0;
     page->is_dirty_ = false;
