@@ -9,8 +9,11 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
+#include <cstring>
+
 #include "execution_defs.h"
 #include "execution_manager.h"
+#include "executor_compare.h"
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
@@ -24,6 +27,8 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
     std::vector<Condition> fed_conds_;          // join条件
     bool isend;
+    std::unique_ptr<RmRecord> left_rec_;
+    std::unique_ptr<RmRecord> join_rec_;
 
    public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
@@ -44,16 +49,62 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
+        left_->beginTuple();
+        if (left_->is_end()) {
+            isend = true;
+            return;
+        }
+        left_rec_ = left_->Next();
+        right_->beginTuple();
+        isend = false;
+        advance_to_match();
+    }
 
+    void advance_to_match() {
+        while (!left_->is_end()) {
+            while (!right_->is_end()) {
+                auto right_rec = right_->Next();
+                auto rec = std::make_unique<RmRecord>(len_);
+                memcpy(rec->data, left_rec_->data, left_->tupleLen());
+                memcpy(rec->data + left_->tupleLen(), right_rec->data, right_->tupleLen());
+                if (eval_conditions(fed_conds_, cols_, rec->data)) {
+                    join_rec_ = std::move(rec);
+                    isend = false;
+                    return;
+                }
+                right_->nextTuple();
+            }
+            left_->nextTuple();
+            if (left_->is_end()) {
+                break;
+            }
+            left_rec_ = left_->Next();
+            right_->beginTuple();
+        }
+        isend = true;
+        join_rec_.reset();
     }
 
     void nextTuple() override {
-        
+        if (isend) {
+            return;
+        }
+        right_->nextTuple();
+        advance_to_match();
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        if (join_rec_ == nullptr) {
+            return nullptr;
+        }
+        return std::make_unique<RmRecord>(*join_rec_);
     }
+
+    bool is_end() const override { return isend; }
+
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+
+    size_t tupleLen() const override { return len_; }
 
     Rid &rid() override { return _abstract_rid; }
 };
