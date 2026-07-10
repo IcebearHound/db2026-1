@@ -8,6 +8,7 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
+#include <cstdio>
 #include <netinet/in.h>
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -167,6 +168,12 @@ void *client_handler(void *sock_fd) {
                     outfile.close();
                 }
             }
+        } else {
+            const std::string failure = "failure\n";
+            memcpy(data_send, failure.c_str(), failure.size());
+            offset = static_cast<int>(failure.size());
+            std::fstream outfile("output.txt", std::ios::out | std::ios::app);
+            outfile << failure;
         }
         if(finish_analyze == false) {
             yy_delete_buffer(buf);

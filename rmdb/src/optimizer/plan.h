@@ -18,6 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include "parser/ast.h"
 
 #include "parser/parser.h"
+#include "common/common.h"
+#include "system/sm.h"
 
 typedef enum PlanTag{
     T_Invalid = 1,
@@ -42,7 +44,9 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Aggregate,
+    T_Limit
 } PlanTag;
 
 // 查询执行计划
@@ -119,18 +123,40 @@ class ProjectionPlan : public Plan
 class SortPlan : public Plan
 {
     public:
-        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc)
+        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<OrderBySpec> order_bys)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
-            sel_col_ = sel_col;
-            is_desc_ = is_desc;
+            order_bys_ = std::move(order_bys);
         }
         ~SortPlan(){}
         std::shared_ptr<Plan> subplan_;
-        TabCol sel_col_;
-        bool is_desc_;
-        
+        std::vector<OrderBySpec> order_bys_;
+};
+
+class AggregatePlan : public Plan {
+   public:
+    AggregatePlan(std::shared_ptr<Plan> subplan, std::vector<SelectExpr> select_exprs,
+                  std::vector<TabCol> group_cols, std::vector<HavingCondition> having_conds)
+        : subplan_(std::move(subplan)), select_exprs_(std::move(select_exprs)),
+          group_cols_(std::move(group_cols)), having_conds_(std::move(having_conds)) {
+        Plan::tag = T_Aggregate;
+    }
+
+    std::shared_ptr<Plan> subplan_;
+    std::vector<SelectExpr> select_exprs_;
+    std::vector<TabCol> group_cols_;
+    std::vector<HavingCondition> having_conds_;
+};
+
+class LimitPlan : public Plan {
+   public:
+    LimitPlan(std::shared_ptr<Plan> subplan, size_t limit) : subplan_(std::move(subplan)), limit_(limit) {
+        Plan::tag = T_Limit;
+    }
+
+    std::shared_ptr<Plan> subplan_;
+    size_t limit_;
 };
 
 // dml语句，包括insert; delete; update; select语句　
@@ -139,7 +165,7 @@ class DMLPlan : public Plan
     public:
         DMLPlan(PlanTag tag, std::shared_ptr<Plan> subplan,std::string tab_name,
                 std::vector<Value> values, std::vector<Condition> conds,
-                std::vector<SetClause> set_clauses)
+                std::vector<SetClause> set_clauses, std::vector<TabCol> output_cols = {})
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
@@ -147,6 +173,7 @@ class DMLPlan : public Plan
             values_ = std::move(values);
             conds_ = std::move(conds);
             set_clauses_ = std::move(set_clauses);
+            output_cols_ = std::move(output_cols);
         }
         ~DMLPlan(){}
         std::shared_ptr<Plan> subplan_;
@@ -154,6 +181,7 @@ class DMLPlan : public Plan
         std::vector<Value> values_;
         std::vector<Condition> conds_;
         std::vector<SetClause> set_clauses_;
+        std::vector<TabCol> output_cols_;
 };
 
 // ddl语句, 包括create/drop table; create/drop index;

@@ -86,3 +86,37 @@ struct SetClause {
     TabCol lhs;
     Value rhs;
 };
+
+enum AggFunc { AGG_FUNC_NONE, AGG_FUNC_COUNT, AGG_FUNC_MAX, AGG_FUNC_MIN, AGG_FUNC_SUM, AGG_FUNC_AVG };
+
+struct AggregateExpr {
+    AggFunc func = AGG_FUNC_NONE;
+    TabCol col;
+    bool count_star = false;
+    ColType input_type = TYPE_INT;
+    int input_len = 0;
+};
+
+struct SelectExpr {
+    bool is_aggregate = false;
+    TabCol col;
+    AggregateExpr aggregate;
+    std::string output_name;
+    ColType output_type = TYPE_INT;
+    int output_len = sizeof(int);
+};
+
+struct HavingCondition {
+    bool is_aggregate = true;
+    AggregateExpr aggregate;
+    TabCol col;
+    ColType col_type = TYPE_INT;
+    int col_len = 0;
+    CompOp op = OP_EQ;
+    Value rhs;
+};
+
+struct OrderBySpec {
+    TabCol col;
+    bool is_desc = false;
+};

@@ -30,6 +30,8 @@ int main() {
         "select * from tb where x <> 2 and y >= 3. and z <= '123' and b < tb.a;",
         "select x.a, y.b from x, y where x.a = y.b and c = d;",
         "select x.a, y.b from x join y where x.a = y.b and c = d;",
+        "select max(id) as max_id, count(*) as rows from grade;",
+        "select course, id, avg(score) as avg_score from grade group by course, id having count(*) > 1 and min(score) >= 60 order by avg_score desc, id limit 10;",
         "exit;",
         "help;",
         "",

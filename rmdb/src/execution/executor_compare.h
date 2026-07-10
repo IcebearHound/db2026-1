@@ -20,6 +20,19 @@ inline int compare_raw_value(const char *lhs, const char *rhs, ColType type, int
     return strncmp(lhs, rhs, len);
 }
 
+inline int compare_typed_value(const char *lhs, ColType lhs_type, int lhs_len,
+                               const char *rhs, ColType rhs_type, int rhs_len) {
+    if ((lhs_type == TYPE_INT || lhs_type == TYPE_FLOAT) &&
+        (rhs_type == TYPE_INT || rhs_type == TYPE_FLOAT)) {
+        const double l = lhs_type == TYPE_INT ? *reinterpret_cast<const int *>(lhs)
+                                               : *reinterpret_cast<const float *>(lhs);
+        const double r = rhs_type == TYPE_INT ? *reinterpret_cast<const int *>(rhs)
+                                               : *reinterpret_cast<const float *>(rhs);
+        return (l > r) - (l < r);
+    }
+    return strncmp(lhs, rhs, std::min(lhs_len, rhs_len));
+}
+
 inline bool eval_compare(int cmp, CompOp op) {
     switch (op) {
         case OP_EQ: return cmp == 0;
@@ -46,13 +59,20 @@ inline bool eval_condition(const Condition &cond, const std::vector<ColMeta> &co
     auto lhs_col = find_col_meta(cols, cond.lhs_col);
     const char *lhs = record_data + lhs_col->offset;
     const char *rhs = nullptr;
+    ColType rhs_type;
+    int rhs_len;
     if (cond.is_rhs_val) {
         rhs = cond.rhs_val.raw->data;
+        rhs_type = cond.rhs_val.type;
+        rhs_len = cond.rhs_val.raw->size;
     } else {
         auto rhs_col = find_col_meta(cols, cond.rhs_col);
         rhs = record_data + rhs_col->offset;
+        rhs_type = rhs_col->type;
+        rhs_len = rhs_col->len;
     }
-    return eval_compare(compare_raw_value(lhs, rhs, lhs_col->type, lhs_col->len), cond.op);
+    return eval_compare(compare_typed_value(lhs, lhs_col->type, lhs_col->len,
+                                            rhs, rhs_type, rhs_len), cond.op);
 }
 
 inline bool eval_conditions(const std::vector<Condition> &conds, const std::vector<ColMeta> &cols,

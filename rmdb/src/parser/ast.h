@@ -32,6 +32,15 @@ enum OrderByDir {
     OrderBy_DESC
 };
 
+enum AggType {
+    AGG_NONE,
+    AGG_COUNT,
+    AGG_MAX,
+    AGG_MIN,
+    AGG_SUM,
+    AGG_AVG
+};
+
 enum SetKnobType {
     EnableNestLoop, EnableSortMerge
 };
@@ -151,6 +160,29 @@ struct Col : public Expr {
             tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
 };
 
+struct SelectItem : public TreeNode {
+    AggType agg_type;
+    std::shared_ptr<Col> col;
+    bool count_star;
+    std::string alias;
+
+    SelectItem(AggType agg_type_, std::shared_ptr<Col> col_, bool count_star_, std::string alias_ = "")
+        : agg_type(agg_type_), col(std::move(col_)), count_star(count_star_), alias(std::move(alias_)) {}
+};
+
+struct HavingExpr : public TreeNode {
+    std::shared_ptr<SelectItem> lhs;
+    std::shared_ptr<Col> lhs_col;
+    SvCompOp op;
+    std::shared_ptr<Value> rhs;
+
+    HavingExpr(std::shared_ptr<SelectItem> lhs_, SvCompOp op_, std::shared_ptr<Value> rhs_)
+        : lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+
+    HavingExpr(std::shared_ptr<Col> lhs_col_, SvCompOp op_, std::shared_ptr<Value> rhs_)
+        : lhs_col(std::move(lhs_col_)), op(op_), rhs(std::move(rhs_)) {}
+};
+
 struct SetClause : public TreeNode {
     std::string col_name;
     std::shared_ptr<Value> val;
@@ -168,12 +200,11 @@ struct BinaryExpr : public TreeNode {
             lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
 };
 
-struct OrderBy : public TreeNode
-{
-    std::shared_ptr<Col> cols;
+struct OrderBy : public TreeNode {
+    std::shared_ptr<Col> col;
     OrderByDir orderby_dir;
-    OrderBy( std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
-       cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+    OrderBy(std::shared_ptr<Col> col_, OrderByDir orderby_dir_) :
+        col(std::move(col_)), orderby_dir(orderby_dir_) {}
 };
 
 struct InsertStmt : public TreeNode {
@@ -215,24 +246,24 @@ struct JoinExpr : public TreeNode {
 };
 
 struct SelectStmt : public TreeNode {
-    std::vector<std::shared_ptr<Col>> cols;
+    std::vector<std::shared_ptr<SelectItem>> select_items;
     std::vector<std::string> tabs;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
+    std::vector<std::shared_ptr<Col>> group_bys;
+    std::vector<std::shared_ptr<HavingExpr>> havings;
+    std::vector<std::shared_ptr<OrderBy>> orders;
+    int limit;
 
-    
-    bool has_sort;
-    std::shared_ptr<OrderBy> order;
-
-
-    SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
+    SelectStmt(std::vector<std::shared_ptr<SelectItem>> select_items_,
                std::vector<std::string> tabs_,
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
-               std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
-            order(std::move(order_)) {
-                has_sort = (bool)order;
-            }
+               std::vector<std::shared_ptr<Col>> group_bys_,
+               std::vector<std::shared_ptr<HavingExpr>> havings_,
+               std::vector<std::shared_ptr<OrderBy>> orders_,
+               int limit_) :
+        select_items(std::move(select_items_)), tabs(std::move(tabs_)), conds(std::move(conds_)),
+        group_bys(std::move(group_bys_)), havings(std::move(havings_)), orders(std::move(orders_)), limit(limit_) {}
 };
 
 // set enable_nestloop
@@ -277,6 +308,13 @@ struct SemValue {
     std::vector<std::shared_ptr<BinaryExpr>> sv_conds;
 
     std::shared_ptr<OrderBy> sv_orderby;
+    std::vector<std::shared_ptr<OrderBy>> sv_orderbys;
+
+    AggType sv_agg_type;
+    std::shared_ptr<SelectItem> sv_select_item;
+    std::vector<std::shared_ptr<SelectItem>> sv_select_items;
+    std::shared_ptr<HavingExpr> sv_having;
+    std::vector<std::shared_ptr<HavingExpr>> sv_havings;
 
     SetKnobType sv_setKnobType;
 };

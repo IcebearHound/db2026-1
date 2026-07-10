@@ -1,0 +1,6 @@
+add_executable(aggregation_test aggregation_test.cpp)
+add_test(NAME aggregation_test COMMAND aggregation_test)
+
+add_executable(aggregation_analyze_test aggregation_analyze_test.cpp)
+target_link_libraries(aggregation_analyze_test analyze parser)
+add_test(NAME aggregation_analyze_test COMMAND aggregation_analyze_test)

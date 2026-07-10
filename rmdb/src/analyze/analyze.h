@@ -35,6 +35,14 @@ class Query{
     //insert 的values值
     std::vector<Value> values;
 
+    std::vector<SelectExpr> select_exprs;
+    std::vector<TabCol> group_cols;
+    std::vector<HavingCondition> having_conds;
+    std::vector<OrderBySpec> order_bys;
+    std::vector<TabCol> output_cols;
+    bool has_aggregation = false;
+    int limit = -1;
+
     Query(){}
 
 };
